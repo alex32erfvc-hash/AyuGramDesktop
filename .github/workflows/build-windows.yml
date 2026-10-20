@@ -32,15 +32,18 @@ jobs:
             "C:\Program Files\Android",
             "C:\Program Files\MySQL",
             "C:\Program Files\MongoDB",
-            "C:\Program Files\PostgreSQL",
-            "C:\Strawberry",
-            "C:\ProgramData\Chocolatey\lib"
+            "C:\Program Files\PostgreSQL"
           )
           foreach ($p in $paths) {
             if (Test-Path $p) {
               Write-Host "Removing $p..."
               Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $p
             }
+          }
+          $vsInstaller = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
+          if (Test-Path $vsInstaller) {
+            Write-Host "Adding $vsInstaller to GITHUB_PATH"
+            $vsInstaller | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
           Write-Host "Disk space after cleanup:"
           Get-PSDrive C | Select-Object Used, Free
