@@ -25,6 +25,7 @@ jobs:
           Write-Host "Initial disk space:"
           Get-PSDrive C | Select-Object Used, Free
           $paths = @(
+            "C:\hostedtoolcache\windows\CodeQL",
             "C:\hostedtoolcache\windows\Java_Temurin-Hotspot_jdk",
             "C:\hostedtoolcache\windows\Ruby",
             "C:\hostedtoolcache\windows\go",
@@ -32,7 +33,16 @@ jobs:
             "C:\Program Files\Android",
             "C:\Program Files\MySQL",
             "C:\Program Files\MongoDB",
-            "C:\Program Files\PostgreSQL"
+            "C:\Program Files\PostgreSQL",
+            "C:\ghcup",
+            "C:\cabal",
+            "C:\Strawberry",
+            "C:\Program Files\Amazon",
+            "C:\Program Files\Microsoft SDKs\Azure",
+            "C:\Program Files\LLVM",
+            "C:\Program Files (x86)\LLVM",
+            "C:\ProgramData\chocolatey",
+            "C:\Program Files\ImageMagick-7.1.2-Q16-HDRI"
           )
           foreach ($p in $paths) {
             if (Test-Path $p) {
@@ -40,6 +50,12 @@ jobs:
               Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $p
             }
           }
+          if (Test-Path 'C:\Program Files\dotnet\sdk') {
+            Get-ChildItem 'C:\Program Files\dotnet\sdk' | Where-Object { $_.Name -notlike '9.*' -and $_.Name -notlike '8.*' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Remove-Item -Recurse -Force "$env:TEMP\*" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force 'C:\Windows\Temp\*' -ErrorAction SilentlyContinue
+
           $vsInstaller = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
           if (Test-Path $vsInstaller) {
             Write-Host "Adding $vsInstaller to GITHUB_PATH"
@@ -187,7 +203,8 @@ jobs:
         shell: bash
         run: |
           find $LibrariesPath '(' '(' ! '(' -name '*.lib' -o -name '*.a' -o -name '*.exe' -o -name '*.h' -o -name '*.hpp' -o -name '*.inc' -o -name '*.cmake' -o -name '*.pc' -o -path '*/include/*' -o -path '*/objects-*' -o -path '*/cache_keys/*' -o -path '*/patches/*' -o -path '*/nv-codec-headers/*' ')' -type f ')' -o -empty ')' -delete
-          rm -rf $TBUILD/ThirdParty/*.exe $TBUILD/ThirdParty/*.zip $TBUILD/ThirdParty/*.7z $TBUILD/ThirdParty/*.tar.* 2>/dev/null || true
+          find $LibrariesPath -name '*.pdb' -delete 2>/dev/null || true
+          rm -rf $TBUILD/ThirdParty/*.exe $TBUILD/ThirdParty/*.zip $TBUILD/ThirdParty/*.7z $TBUILD/ThirdParty/*.tar.* $TBUILD/ThirdParty/*.msi 2>/dev/null || true
 
       - name: Save ThirdParty cache
         if: steps.cache-third-party.outputs.cache-hit != 'true'
@@ -235,16 +252,24 @@ jobs:
           cmake --build ..\out --config Release --parallel
 
       - name: Prepare Artifact
-        shell: cmd
+        shell: pwsh
         run: |
-          set OUT=%TBUILD%\%REPO_NAME%\out\Release
-          mkdir artifact
-          if exist "%OUT%\AyuGram.exe" (
-            copy "%OUT%\AyuGram.exe" "artifact\AyuGram_2.exe"
-          ) else if exist "%OUT%\Telegram.exe" (
-            copy "%OUT%\Telegram.exe" "artifact\AyuGram_2.exe"
-          )
-          dir artifact
+          New-Item -ItemType Directory -Force -Path "artifact" | Out-Null
+          $searchDir = "$env:TBUILD\$env:REPO_NAME\out"
+          Write-Host "Searching for built executable in $searchDir..."
+          $exe = Get-ChildItem -Path $searchDir -Filter "AyuGram.exe" -Recurse -File | Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Path $searchDir -Filter "Telegram.exe" -Recurse -File | Select-Object -First 1
+          }
+          if ($exe) {
+            Write-Host "Found binary: $($exe.FullName) ($([math]::Round($exe.Length / 1MB, 2)) MB)"
+            Copy-Item $exe.FullName "artifact\AyuGram_2.exe"
+            Write-Host "Successfully prepared artifact\AyuGram_2.exe"
+          } else {
+            Write-Error "Neither AyuGram.exe nor Telegram.exe was found in $searchDir!"
+            exit 1
+          }
+          Get-ChildItem artifact
 
       - name: Upload AyuGram Artifact
         uses: actions/upload-artifact@v4
