@@ -19,7 +19,7 @@ jobs:
         shell: cmd
 
     steps:
-      - name: Free runner disk space
+      - name: Free runner disk space & configure pagefile
         shell: pwsh
         run: |
           Write-Host "Initial disk space:"
@@ -46,15 +46,29 @@ jobs:
           )
           foreach ($p in $paths) {
             if (Test-Path $p) {
-              Write-Host "Removing $p..."
-              Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $p
+              Write-Host "Fast removing $p via cmd rd..."
+              cmd.exe /c "rd /s /q `"$p`"" 2>$null
             }
           }
           if (Test-Path 'C:\Program Files\dotnet\sdk') {
-            Get-ChildItem 'C:\Program Files\dotnet\sdk' | Where-Object { $_.Name -notlike '9.*' -and $_.Name -notlike '8.*' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem 'C:\Program Files\dotnet\sdk' | Where-Object { $_.Name -notlike '9.*' -and $_.Name -notlike '8.*' } | ForEach-Object { cmd.exe /c "rd /s /q `"$($_.FullName)`"" 2>$null }
           }
           Remove-Item -Recurse -Force "$env:TEMP\*" -ErrorAction SilentlyContinue
           Remove-Item -Recurse -Force 'C:\Windows\Temp\*' -ErrorAction SilentlyContinue
+
+          Write-Host "Configuring 32 GB Windows Virtual Memory (Pagefile)..."
+          try {
+            Set-CimInstance -Query "Select * from Win32_ComputerSystem" -Property @{AutomaticManagedPagefile = $False} -ErrorAction SilentlyContinue
+            $pf = Get-CimInstance Win32_PageFileSetting
+            if ($pf) {
+              $pf | Set-CimInstance -Property @{InitialSize = 16384; MaximumSize = 32768} -ErrorAction SilentlyContinue
+            } else {
+              New-CimInstance -ClassName Win32_PageFileSetting -Property @{Name = "C:\pagefile.sys"; InitialSize = 16384; MaximumSize = 32768} -ErrorAction SilentlyContinue
+            }
+            Get-CimInstance Win32_PageFileSetting | Select-Object Name, InitialSize, MaximumSize
+          } catch {
+            Write-Host "Pagefile setting note: $_"
+          }
 
           $vsInstaller = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer'
           if (Test-Path $vsInstaller) {
@@ -249,7 +263,7 @@ jobs:
           -D DESKTOP_APP_DISABLE_AUTOUPDATE=ON ^
           -D DESKTOP_APP_DISABLE_CRASH_REPORTS=ON
 
-          cmake --build ..\out --config Release --parallel
+          cmake --build ..\out --config Release -- /m:2 /p:TrackFileAccess=false || cmake --build ..\out --config Release -- /m:1
 
       - name: Prepare Artifact
         shell: pwsh
