@@ -5,9 +5,6 @@ on:
   push:
     branches:
       - dev
-    paths:
-      - 'Telegram/SourceFiles/storage/**'
-      - '.github/workflows/build-windows.yml'
 
 jobs:
   windows:
